@@ -906,7 +906,7 @@ void type_set_handler_dialog(MIME_type *type)
 {
 	guchar		 *tmp;
 	GtkDialog	 *dialog;
-	GtkWidget	 *frame, *entry, *label, *button;
+	GtkWidget	 *frame, *apps_frame, *entry, *label, *button;
 	GtkWidget	 *hbox;
 	Radios		 *radios;
     GtkListStore *model;
@@ -926,9 +926,30 @@ void type_set_handler_dialog(MIME_type *type)
 
 	gtk_window_set_title(GTK_WINDOW(dialog), _("Set run action"));
 
+	radios = radios_new(run_action_update, dialog);
+	g_object_set_data(G_OBJECT(dialog), "rox-radios", radios);
+
+	radios_add(radios,
+			_("If a handler for the specific type isn't set up, "
+			  "use this as the default."), SET_MEDIA,
+			_("Set default for all `%s/<anything>'"),
+			type->media_type);
+
+	radios_add(radios,
+			_("Use this application for all files with this MIME "
+			  "type."), SET_TYPE,
+			_("Only for the type `%s' (%s/%s)"),
+			mime_type_comment(type),
+			type->media_type, type->subtype);
+
+	radios_set_value(radios, SET_TYPE);
+
+	apps_frame = gtk_frame_new(NULL);
+
     scrolled_window = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window),
             GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_container_add(GTK_CONTAINER(apps_frame), scrolled_window);
 
     icon_view = gtk_icon_view_new();
     gtk_container_add(GTK_CONTAINER(scrolled_window), icon_view);
@@ -949,31 +970,12 @@ void type_set_handler_dialog(MIME_type *type)
     foreach_desktop_application(
             type->media_type, type->subtype, add_app_to_model, (void *)&data);
 
-    gtk_box_pack_start(GTK_BOX(dialog->vbox), scrolled_window, TRUE, TRUE, 0);
-
-	radios = radios_new(run_action_update, dialog);
-	g_object_set_data(G_OBJECT(dialog), "rox-radios", radios);
-
-	radios_add(radios,
-			_("If a handler for the specific type isn't set up, "
-			  "use this as the default."), SET_MEDIA,
-			_("Set default for all `%s/<anything>'"),
-			type->media_type);
-	
-	radios_add(radios,
-			_("Use this application for all files with this MIME "
-			  "type."), SET_TYPE,
-			_("Only for the type `%s' (%s/%s)"),
-			mime_type_comment(type),
-			type->media_type, type->subtype);
-
-	radios_set_value(radios, SET_TYPE);
-
 	frame = drop_box_new(_("Drop a suitable application here"));
 
 	g_object_set_data(G_OBJECT(dialog), "rox-dropbox", frame);
 	
 	radios_pack(radios, GTK_BOX(dialog->vbox));
+    gtk_box_pack_start(GTK_BOX(dialog->vbox), apps_frame, TRUE, TRUE, 0);
 	gtk_box_pack_start(GTK_BOX(dialog->vbox), frame, TRUE, TRUE, 0);
 
 	g_signal_connect(frame, "path_dropped",
