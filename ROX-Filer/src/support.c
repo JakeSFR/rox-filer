@@ -1732,6 +1732,7 @@ void foreach_desktop_application(const gchar *type, const gchar *subtype,
     const gchar *xdg_data_home;
     GList *apps_dirs = NULL;
     GList *list_iter;
+    GList *list_iter2;
     gchar **iter;
     gchar *mimeinfo_path;
     gchar *desktop_files_str;
@@ -1755,8 +1756,14 @@ void foreach_desktop_application(const gchar *type, const gchar *subtype,
 
     xdg_data_home = g_getenv("XDG_DATA_HOME");
 
-    if (g_strcmp0(xdg_data_home, ""))
-        apps_dirs = g_list_append(apps_dirs, g_strdup(xdg_data_home));
+	if (xdg_data_home)
+		xdg_data_home = g_strdup(xdg_data_home);
+
+    if (!xdg_data_home || !strcmp(xdg_data_home, ""))
+		xdg_data_home = g_strjoin("/", g_getenv("HOME"), ".local", "share", NULL);
+
+	apps_dirs = g_list_append(apps_dirs,
+			g_strjoin("/", xdg_data_home, "applications", NULL));
 
     for (iter = xdg_data_dirs; *iter; iter++) {
         apps_dirs = g_list_append(
@@ -1764,7 +1771,7 @@ void foreach_desktop_application(const gchar *type, const gchar *subtype,
     }
     g_strfreev(xdg_data_dirs);
 
-    /* Iterate over applications dirs in XDG_DATA_DIRS and XDG_CONFIG_HOME */
+    /* Iterate over applications dirs in XDG_DATA_HOME and XDG_DATA_DIRS. */
     for (list_iter = apps_dirs; list_iter; list_iter = g_list_next(list_iter)) {
         if (!list_iter->data)
             continue;
@@ -1793,15 +1800,22 @@ void foreach_desktop_application(const gchar *type, const gchar *subtype,
                 g_free(*iter);
                 continue;
             }
-            error = NULL;
-            full_path = g_strjoin("/", list_iter->data, *iter, NULL);
-            label = get_value_from_desktop_file(full_path, "Desktop Entry", "Name", &error);
-            if (label && !error) {
-                func(full_path, label, user_data);
-                g_hash_table_add(desktop_entries, *iter);
-            } else {
-                g_free(*iter);
-            }
+			/* Look for .desktop file in applications subdir of XDG_DATA_HOME and XDG_DATA_DIRS. */
+			for (list_iter2 = apps_dirs; list_iter2; list_iter2 = g_list_next(list_iter2)) {
+				if (!list_iter2->data)
+					continue;
+				error = NULL;
+				full_path = g_strjoin("/", list_iter2->data, *iter, NULL);
+				label = get_value_from_desktop_file(full_path, "Desktop Entry", "Name", &error);
+				if (label && !error) {
+					func(full_path, label, user_data);
+					g_hash_table_add(desktop_entries, *iter);
+					break;
+				}
+			}
+			if (!g_hash_table_contains(desktop_entries, *iter)) {
+				g_free(*iter);
+			}
         }
         g_free(desktop_files);
         g_free(desktop_files_str);
@@ -1820,6 +1834,7 @@ void foreach_desktop_application(const gchar *type, const gchar *subtype,
 
     g_hash_table_destroy(desktop_entries);
     g_free(mime_type);
+	g_free(xdg_data_home);
 
     return;
 }
