@@ -1054,7 +1054,7 @@ void type_set_handler_dialog(MIME_type *type)
 
     icon_view = gtk_icon_view_new();
     gtk_container_add(GTK_CONTAINER(scrolled_window), icon_view);
-    gtk_widget_set_size_request(scrolled_window, 400, 200);
+    gtk_widget_set_size_request(scrolled_window, 430, 200);
 
     model = gtk_list_store_new(3, G_TYPE_STRING, GDK_TYPE_PIXBUF, G_TYPE_STRING, -1);
 
