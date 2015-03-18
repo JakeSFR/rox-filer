@@ -92,6 +92,9 @@ static MIME_type *get_mime_type(const gchar *type_name, gboolean can_create);
 static gboolean remove_handler_with_confirm(const guchar *path);
 static void set_icon_theme(void);
 static GList *build_icon_theme(Option *option, xmlNode *node, guchar *label);
+static void app_drag_data_get(GtkWidget *icon_view, GdkDragContext *drag_context,
+        GtkSelectionData *data, guint info, guint time, gpointer user_data);
+static void add_app_to_model(gchar *path, gchar *label, void *user_data);
 
 /* Hash of all allocated MIME types, indexed by "media/subtype".
  * MIME_type structs are never freed; this table prevents memory leaks
@@ -836,16 +839,82 @@ out:
 	return desc;
 }
 
+struct _ModelData {
+    GtkListStore *model;
+    GtkTreeIter iter;
+};
+void add_app_to_model(gchar *path, gchar *label, void *user_data)
+{
+    struct _ModelData *data = (struct _ModelData *)user_data;
+
+    GtkListStore *model = (GtkListStore *)data->model;
+    GtkTreeIter iter = data->iter;
+
+    DirItem *ditem;
+    MaskedPixmap *image;
+
+    ditem = diritem_new("");
+    diritem_restat(path, ditem, NULL);
+    image = di_image(ditem);
+
+    gtk_list_store_append(model, &iter);
+    gtk_list_store_set(model, &iter, 0, label, 1, image->pixbuf, 2, path, -1);
+}
+
+void app_drag_data_get(GtkWidget *icon_view, GdkDragContext *drag_context,
+        GtkSelectionData *data, guint info, guint time, gpointer user_data)
+{
+    GtkTreeModel *model;
+    GList *items;
+    gchar *path;
+    gchar *uri;
+    gchar *uris[2];
+    GtkTreeIter iter;
+
+    if (info != TARGET_URI_LIST) {
+        return;
+    }
+    
+    items = gtk_icon_view_get_selected_items(GTK_ICON_VIEW(icon_view));
+    if (!items) {
+        return;
+    }
+
+    model = gtk_icon_view_get_model(GTK_ICON_VIEW(icon_view));
+    if (!gtk_tree_model_get_iter(model, &iter, items->data)) {
+        return;
+    }
+
+    gtk_tree_model_get(model, &iter, 2, &path, -1);
+
+    uri = g_strconcat("file://", path, NULL);
+
+    uris[0] = uri;
+    uris[1] = NULL;
+
+    gtk_selection_data_set_uris(data, uris);
+
+    g_free(path);
+    g_list_foreach(items, (GFunc)gtk_tree_path_free, NULL);
+    g_list_free(items);
+}
+
 /* Display a dialog box allowing the user to set the default run action
  * for this type.
  */
 void type_set_handler_dialog(MIME_type *type)
 {
-	guchar		*tmp;
-	GtkDialog	*dialog;
-	GtkWidget	*frame, *entry, *label, *button;
-	GtkWidget	*hbox;
-	Radios		*radios;
+	guchar		 *tmp;
+	GtkDialog	 *dialog;
+	GtkWidget	 *frame, *apps_frame, *entry, *label, *button;
+	GtkWidget	 *hbox;
+	Radios		 *radios;
+    GtkListStore *model;
+    GtkWidget    *icon_view;
+    GtkWidget    *scrolled_window;
+    GtkTreeIter   iter;
+    struct _ModelData data;
+    GtkTargetEntry target = {"text/uri-list", 0, TARGET_URI_LIST};
 
 	g_return_if_fail(type != NULL);
 
@@ -865,7 +934,7 @@ void type_set_handler_dialog(MIME_type *type)
 			  "use this as the default."), SET_MEDIA,
 			_("Set default for all `%s/<anything>'"),
 			type->media_type);
-	
+
 	radios_add(radios,
 			_("Use this application for all files with this MIME "
 			  "type."), SET_TYPE,
@@ -875,11 +944,38 @@ void type_set_handler_dialog(MIME_type *type)
 
 	radios_set_value(radios, SET_TYPE);
 
+	apps_frame = gtk_frame_new(NULL);
+
+    scrolled_window = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window),
+            GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_container_add(GTK_CONTAINER(apps_frame), scrolled_window);
+
+    icon_view = gtk_icon_view_new();
+    gtk_container_add(GTK_CONTAINER(scrolled_window), icon_view);
+    gtk_widget_set_size_request(scrolled_window, 400, 200);
+
+    model = gtk_list_store_new(3, G_TYPE_STRING, GDK_TYPE_PIXBUF, G_TYPE_STRING, -1);
+
+    gtk_icon_view_set_model(GTK_ICON_VIEW(icon_view), GTK_TREE_MODEL(model));
+    gtk_icon_view_set_text_column(GTK_ICON_VIEW(icon_view), 0);
+    gtk_icon_view_set_pixbuf_column(GTK_ICON_VIEW(icon_view), 1);
+    gtk_icon_view_enable_model_drag_source(GTK_ICON_VIEW(icon_view),
+            GDK_BUTTON1_MASK, &target, 1, GDK_ACTION_COPY);
+    g_signal_connect(icon_view, "drag-data-get", G_CALLBACK(app_drag_data_get), NULL);
+
+    data.model = model;
+    data.iter = iter;
+
+    foreach_desktop_application(
+            type->media_type, type->subtype, add_app_to_model, (void *)&data);
+
 	frame = drop_box_new(_("Drop a suitable application here"));
 
 	g_object_set_data(G_OBJECT(dialog), "rox-dropbox", frame);
 	
 	radios_pack(radios, GTK_BOX(dialog->vbox));
+    gtk_box_pack_start(GTK_BOX(dialog->vbox), apps_frame, TRUE, TRUE, 0);
 	gtk_box_pack_start(GTK_BOX(dialog->vbox), frame, TRUE, TRUE, 0);
 
 	g_signal_connect(frame, "path_dropped",

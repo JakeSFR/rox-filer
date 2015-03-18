@@ -444,7 +444,9 @@ GType icon_get_type(void)
  */
 void icon_set_path(Icon *icon, const char *pathname, const char *name)
 {
-	gchar 	*base = NULL;
+	gchar 	*leafname = NULL;
+    GError *error = NULL;
+
 	if (icon->path)
 	{
 		icon_unhash_path(icon);
@@ -466,13 +468,29 @@ void icon_set_path(Icon *icon, const char *pathname, const char *name)
 		icon_hash_path(icon);
 
 		if (!name) {
-			base = g_path_get_basename(icon->src_path);
-			name = base;
+			leafname = g_path_get_basename(icon->src_path);
+			name = leafname;
 		}
 
 		icon->item = diritem_new(name);
 		diritem_restat(icon->path, icon->item, NULL);
-		g_free(base);
+
+        if (icon->item->mime_type == application_x_desktop)
+        {
+            leafname = get_value_from_desktop_file(
+                pathname, "Desktop Entry", "Name", &error);
+            if (leafname) {
+                if (error) {
+                    g_free(leafname);
+                } else {
+                    if (icon->item->leafname)
+                        g_free(icon->item->leafname);
+                    icon->item->leafname = leafname;
+                }
+            }
+        } else {
+            g_free(leafname);
+        }
 	}
 }
 

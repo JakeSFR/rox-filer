@@ -70,6 +70,9 @@ gboolean get_values_from_desktop_file(const char *path,
 				      const char *section,
 				      const char *key,
 				      gchar **value, ...);
+void foreach_desktop_application(const gchar *type, const gchar *subtype,
+        void (*func)(gchar *path, gchar *label, void *user_data),
+        void *user_data);
 gchar *build_command_with_path(const char *cmd, const char *path);
 gchar *find_app(const char *appname);
 

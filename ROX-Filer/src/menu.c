@@ -1598,9 +1598,12 @@ static void add_sendto(GtkWidget *menu, const gchar *type, const gchar *subtype)
 {
 		GList *widgets = NULL;
 		widgets = add_sendto_shared(menu, type, subtype, (CallbackFn) do_send_to);
+        widgets = g_list_concat(widgets,
+            add_sendto_desktop_items(menu, type, subtype, (CallbackFn) do_send_to));
 		if (widgets)
 			gtk_menu_shell_append(GTK_MENU_SHELL(menu),
 					gtk_menu_item_new());
+
 		g_list_free(widgets);	/* TODO: Get rid of this */
 }
 GList *add_sendto_shared(GtkWidget *menu,
@@ -1634,6 +1637,37 @@ GList *add_sendto_shared(GtkWidget *menu,
 	choices_free_list(paths);
 	return widgets;
 }
+struct _SendToWidgetsData {
+    GList *widgets;
+    GtkWidget *menu;
+    CallbackFn swapped_func;
+};
+void add_desktop_menu_item(gchar *path, gchar *label, void *user_data) {
+    struct _SendToWidgetsData *data = (struct _SendToWidgetsData *)user_data;
+    GtkWidget *item;
+    DirItem *ditem;
+
+    ditem = diritem_new("");
+    diritem_restat(path, ditem, NULL);
+
+    item = make_send_to_item(ditem, label, get_menu_icon_style());
+
+    g_signal_connect_swapped(item, "activate",
+            G_CALLBACK(data->swapped_func), path);
+    if (data->menu)
+        gtk_menu_shell_append(GTK_MENU_SHELL(data->menu), item);
+
+    data->widgets = g_list_append(data->widgets, item);
+}
+GList *add_sendto_desktop_items(GtkWidget *menu,
+        const gchar *type, const gchar *subtype, CallbackFn swapped_func)
+{
+    struct _SendToWidgetsData data = {NULL, menu, swapped_func};
+    foreach_desktop_application(type, subtype, add_desktop_menu_item, (void *)&data);
+    return data.widgets;
+}
+
+
 
 /* Scan the SendTo dir and create and show the Send To menu.
  * The 'paths' list and every path in it is claimed, and will be
