@@ -253,6 +253,7 @@ void toolbar_update_info(FilerWindow *filer_window)
 	}
 
 	gtk_label_set_text(GTK_LABEL(filer_window->toolbar_text), label);
+
 	g_free(label);
 }
 
@@ -268,6 +269,7 @@ void toolbar_update_toolbar(FilerWindow *filer_window)
 		gtk_widget_destroy(filer_window->toolbar);
 		filer_window->toolbar = NULL;
 		filer_window->toolbar_text = NULL;
+		filer_window->toolbar_size_text = NULL;
 	}
 
 	if (o_toolbar.int_value != TOOLBAR_NONE)
@@ -366,10 +368,15 @@ static void toolbar_bookmarks_clicked(GtkWidget *widget,
 	{
 		bookmarks_show_menu(filer_window, widget);
 	}
-	else if (event->type == GDK_BUTTON_RELEASE &&
-			((GdkEventButton *) event)->button != 1)
+	else if (event->type == GDK_BUTTON_RELEASE)
 	{
-		bookmarks_edit();
+		if (((GdkEventButton *) event)->button == 2)
+		{
+			if (bookmarks_get_recent())
+				filer_change_to(filer_window, bookmarks_get_recent(), NULL);
+		}
+		else if (((GdkEventButton *) event)->button != 1)
+			bookmarks_edit();
 	}
 	gdk_event_free(event);
 }
@@ -398,11 +405,7 @@ static void toolbar_up_clicked(GtkWidget *widget, FilerWindow *filer_window)
 	event = get_current_event(GDK_BUTTON_RELEASE);
 	if (event->type == GDK_BUTTON_RELEASE && NEW_WIN_BUTTON(event))
 	{
-		BindAction action = bind_lookup_bev(
-				BIND_DIRECTORY_ICON, (GdkEventButton *)event);
-		if (action == ACT_OPEN_ITEM &&
-			(((GdkEventButton *)event)->button != 1 ||
-			 ((GdkEventButton *)event)->state & GDK_MOD1_MASK))
+		if (((GdkEventButton *)event)->button == 2)
 		{
 			if (strcmp(filer_window->real_path, filer_window->sym_path) == 0)
 				change_to_parent(filer_window);
@@ -441,7 +444,13 @@ static void toolbar_size_clicked(GtkWidget *widget, FilerWindow *filer_window)
 
 	bev = (GdkEventButton *) get_current_event(GDK_BUTTON_RELEASE);
 	if (bev->type == GDK_BUTTON_RELEASE)
-		display_change_size(filer_window, bev->button == 1);
+	{
+		if (bev->button == 2)	
+			display_set_layout(filer_window,
+				AUTO_SIZE_ICONS, filer_window->details_type, TRUE);
+		else
+			display_change_size(filer_window, bev->button == 1);
+	}
 	gdk_event_free((GdkEvent *) bev);
 }
 
@@ -637,6 +646,53 @@ static gint toolbar_button_pressed(GtkButton *button,
 	return FALSE;
 }
 
+static gint toolbar_button_scroll(GtkButton *button,
+				GdkEventScroll *event,
+				FilerWindow *fw)
+{
+	DisplayStyle ds = fw->display_style;
+	DisplayStyle *dsw = &(fw->display_style_wanted);
+	gfloat *sc = &(fw->icon_scale);
+	static const gfloat
+		step_pix = (gfloat) ICON_HEIGHT - SMALL_WIDTH,
+		start = (ICON_HEIGHT + step_pix) / HUGE_HEIGHT,
+		step  = step_pix / HUGE_HEIGHT,	
+		end   = HUGE_LIMIT_F / HUGE_HEIGHT;
+
+	if (event->direction == GDK_SCROLL_UP)
+	{
+		if (ds == SMALL_ICONS)
+			*dsw = LARGE_ICONS;
+		else if (ds == LARGE_ICONS)
+		{
+			*dsw = HUGE_ICONS;
+			*sc = start;
+		}
+		else if (*sc < end)
+			*sc += step;
+		else
+			return TRUE;
+	}
+	else if(event->direction == GDK_SCROLL_DOWN)
+	{
+		if (ds == HUGE_ICONS)
+		{
+			*sc -= step;
+			if (*sc < start)
+				*dsw = LARGE_ICONS;
+		}
+		else if (ds == LARGE_ICONS)
+			*dsw = SMALL_ICONS;
+		else
+			return TRUE;
+	}
+	else
+		return FALSE;
+
+	display_set_actual_size(fw, FALSE);
+	return TRUE;
+}
+
 static gint toolbar_button_released(GtkButton *button,
 				GdkEventButton *event,
 				FilerWindow *filer_window)
@@ -657,7 +713,7 @@ static gint toolbar_button_released(GtkButton *button,
 static GtkWidget *add_button(GtkWidget *bar, Tool *tool,
 				FilerWindow *filer_window)
 {
-	GtkWidget 	*button, *icon_widget;
+	GtkWidget 	*button, *icon_widget, *label = NULL;
 
 	icon_widget = gtk_image_new_from_stock(tool->name,
 						GTK_ICON_SIZE_LARGE_TOOLBAR);
@@ -675,7 +731,7 @@ static GtkWidget *add_button(GtkWidget *bar, Tool *tool,
 	
 	if (o_toolbar.int_value == TOOLBAR_HORIZONTAL)
 	{
-		GtkWidget *hbox, *label;
+		GtkWidget *hbox;
 		GList	  *kids;
 		hbox = GTK_BIN(button)->child;
 		kids = gtk_container_get_children(GTK_CONTAINER(hbox));
@@ -687,6 +743,7 @@ static GtkWidget *add_button(GtkWidget *bar, Tool *tool,
 			gtk_box_set_child_packing(GTK_BOX(hbox), label,
 						TRUE, TRUE, 0, GTK_PACK_END);
 			gtk_misc_set_alignment(GTK_MISC(label), 0, 0.5);
+
 		}
 	}
 
@@ -700,6 +757,15 @@ static GtkWidget *add_button(GtkWidget *bar, Tool *tool,
 			G_CALLBACK(toolbar_button_pressed), filer_window);
 		g_signal_connect(button, "button_release_event",
 			G_CALLBACK(toolbar_button_released), filer_window);
+
+		if (tool->clicked == toolbar_size_clicked)
+		{
+			if (label)
+				filer_window->toolbar_size_text = GTK_LABEL(label);
+			
+			g_signal_connect(button, "scroll_event",
+				G_CALLBACK(toolbar_button_scroll), filer_window);
+		}
 	}
 	else
 	{

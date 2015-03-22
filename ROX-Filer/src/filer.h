@@ -103,6 +103,7 @@ struct _FilerWindow
 	GtkWidget	*toolbar;
 	GtkWidget	*toolbar_text;
 	GtkWidget	*scrollbar;
+	GtkLabel	*toolbar_size_text;
 
 	gint		open_timeout;	/* Will resize and show window... */
 
@@ -116,6 +117,14 @@ struct _FilerWindow
 	gint		auto_scroll;		/* Timer */
 
 	char		*window_id;		/* For remote control */
+
+	/* dir settings */
+	gint		reqx;
+	gint		reqy;
+	gint		req_width;
+	gint		req_height;
+	
+	gfloat		icon_scale; /* temporary scale */
 };
 
 extern FilerWindow 	*window_with_focus;
